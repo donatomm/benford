@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Applying Benford's Law for Spotting Doctored Data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f7f6f2;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: rgba(0,0,0,0.1);
+    --border2: rgba(0,0,0,0.06);
+    --text: #1a1a18;
+    --text-muted: #4a4a44;
+    --text-faint: #6b6b65;
+    --green: #3B6D11; --green-bg: #EAF3DE; --green-mid: #639922;
+    --blue: #185FA5; --blue-bg: #E6F1FB; --blue-mid: #378ADD;
+    --amber: #854F0B; --amber-bg: #FAEEDA; --amber-mid: #EF9F27;
+    --red: #A32D2D; --red-bg: #FCEBEB; --red-mid: #E24B4A;
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #18181a;
+      --surface: #232325;
+      --surface2: #2c2c2e;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.05);
+      --text: #e8e8e2;
+      --text-muted: #b8b8b0;
+      --text-faint: #9b9b93;
+      --green: #97C459; --green-bg: #1a2e0a; --green-mid: #639922;
+      --blue: #85B7EB; --blue-bg: #0c1e33; --blue-mid: #378ADD;
+      --amber: #FAC775; --amber-bg: #2e1e05; --amber-mid: #EF9F27;
+      --red: #F09595; --red-bg: #2d1010; --red-mid: #E24B4A;
+    }
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app {
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  .header {
+    margin-bottom: 36px;
+    border-bottom: 0.5px solid var(--border);
+    padding-bottom: 24px;
+  }
+
+  .header-eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+
+  .header h1 {
+    font-size: 26px;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .header h1 strong {
+    font-weight: 500;
+  }
+
+  .header p {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 540px;
+  }
+
+  .input-section {
+    margin-bottom: 24px;
+  }
+
+  .input-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  textarea {
+    width: 100%;
+    height: 100px;
+    padding: 12px 14px;
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    resize: vertical;
+    transition: border-color 0.15s;
+    line-height: 1.7;
+  }
+  textarea:focus {
+    outline: none;
+    border-color: rgba(0,0,0,0.3);
+  }
+  @media (prefers-color-scheme: dark) {
+    textarea:focus { border-color: rgba(255,255,255,0.25); }
+  }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+  }
+
+  button {
+    padding: 8px 16px;
+    font-size: 12px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 500;
+    cursor: pointer;
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    transition: background 0.12s;
+    letter-spacing: 0.01em;
+  }
+  button:hover { background: var(--surface2); }
+  button.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+  button.primary:hover { opacity: 0.85; }
+
+  .parse-info {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--text-faint);
+    margin-left: auto;
+  }
+
+  .guide-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    padding: 7px 14px 7px 10px;
+    border: 0.5px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    font-family: 'IBM Plex Sans', sans-serif;
+    margin-bottom: 20px;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    letter-spacing: 0.01em;
+  }
+  .guide-toggle:hover { color: var(--text); background: var(--surface2); }
+  .guide-toggle.open { color: var(--text); background: var(--surface2); }
+  .guide-toggle .arrow { font-size: 11px; transition: transform 0.2s; display: inline-block; color: var(--text-faint); }
+  .guide-toggle.open .arrow { transform: rotate(90deg); }
+  .guide-toggle .info-icon {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #378ADD;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-style: italic;
+    font-family: Georgia, serif;
+    line-height: 1;
+  }
+
+  .guide-panel {
+    display: none;
+    background: var(--surface);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.75;
+  }
+  .guide-panel.open { display: block; }
+  .guide-panel h3 {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 6px;
+    margin-top: 16px;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .guide-panel h3:first-child { margin-top: 0; }
+  .guide-panel p { margin-bottom: 0; }
+  .guide-panel .guide-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .guide-card {
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .guide-card strong {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+
+  .analysis-box {
+    display: none;
+    background: var(--surface);
+    border: 0.5px solid var(--border2);
+    border-left: 3px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    margin-bottom: 28px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text-muted);
+  }
+  .analysis-box.visible { display: block; }
+  .analysis-box .analysis-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+  .analysis-box p { margin-bottom: 8px; }
+  .analysis-box p:last-child { margin-bottom: 0; }
+  .analysis-box .highlight { color: var(--text); font-weight: 500; }
+  .analysis-box .warn { color: #E24B4A; font-weight: 500; }
+  .analysis-box .ok { color: #639922; font-weight: 500; }
+  .analysis-box .caution { color: #EF9F27; font-weight: 500; }
+
+  .results { display: none; }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  @media (max-width: 640px) {
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  .metric {
+    background: var(--surface);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+  }
+
+  .metric-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 6px;
+  }
+
+  .metric-value {
+    font-size: 24px;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .metric-value.mono {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 19px;
+  }
+
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 280px;
+    margin-bottom: 28px;
+    background: var(--surface);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+  }
+
+  .verdict-table {
+    background: var(--surface);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .verdict-header {
+    display: grid;
+    grid-template-columns: 40px 1fr 70px 70px 70px 90px 100px;
+    gap: 0;
+    padding: 10px 16px;
+    background: var(--surface2);
+    border-bottom: 0.5px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .verdict-row {
+    display: grid;
+    grid-template-columns: 40px 1fr 70px 70px 70px 90px 100px;
+    gap: 0;
+    padding: 10px 16px;
+    border-bottom: 0.5px solid var(--border2);
+    align-items: center;
+    font-size: 12px;
+  }
+  .verdict-row:last-child { border-bottom: none; }
+  .verdict-row:hover { background: var(--surface2); }
+
+  .severity-cell {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    padding-right: 8px;
+  }
+  .severity-mult {
+    font-weight: 500;
+  }
+  .severity-sub {
+    font-size: 12px;
+    color: var(--text-faint);
+    display: block;
+    margin-top: 1px;
+  }
+  .zone-track {
+    height: 3px;
+    background: var(--border2);
+    border-radius: 2px;
+    margin-top: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  .zone-fill {
+    height: 100%;
+    border-radius: 2px;
+    position: absolute;
+    left: 0;
+  }
+
+  .digit-cell {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  .bar-cell {
+    padding-right: 16px;
+  }
+
+  .mini-bar-track {
+    height: 4px;
+    background: var(--border2);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .mini-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    position: absolute;
+    left: 0;
+  }
+
+  .num-cell {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: right;
+    padding-right: 8px;
+  }
+
+  .badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .use-cases {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .use-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border: 0.5px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    font-family: 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.01em;
+  }
+  .use-chip:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .use-chip .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px 32px;
+    max-width: 520px;
+    width: 100%;
+    position: relative;
+  }
+  .modal-hook {
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+  .modal-domain {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 16px;
+  }
+  .modal-body {
+    font-size: 14px;
+    line-height: 1.75;
+    color: var(--text-muted);
+  }
+  .modal-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 0.5px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+    padding: 0;
+  }
+  .modal-close:hover { background: var(--border); color: var(--text); }
+  .modal-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 0.5px solid var(--border2);
+  }
+  .modal-nav button {
+    font-size: 12px;
+    padding: 6px 14px;
+    color: var(--text-muted);
+  }
+  .modal-counter {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .subtitle-note {
+    font-size: 12px;
+    color: var(--text-faint);
+    font-family: 'IBM Plex Mono', monospace;
+    margin-top: 6px;
+    letter-spacing: 0.02em;
+  }
+    margin-top: 28px;
+    padding: 16px;
+    background: var(--surface);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius-lg);
+  }
+
+  .scale-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+  }
+
+  .scale-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 7px;
+    font-size: 12px;
+  }
+  .scale-row:last-child { margin-bottom: 0; }
+
+  .scale-range {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    min-width: 110px;
+  }
+
+  .scale-bar {
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  .scale-desc { color: var(--text-muted); font-size: 12px; }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 0.5px solid var(--border2);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media (max-width: 600px) {
+    .verdict-header, .verdict-row { grid-template-columns: 32px 1fr 60px 70px 100px; }
+    .verdict-header .h-observed, .verdict-header .h-expected,
+    .verdict-row .num-cell.observed, .verdict-row .num-cell.expected { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="header-eyebrow">Statistical Conformity Test</div>
+    <h1>Applying Benford's Law for <strong>spotting doctored data</strong></h1>
+    <div class="use-cases">
+      <span class="use-chip" onclick="openModal(0)"><span class="chip-dot" style="background:#E24B4A;"></span>Are the books cooked?</span>
+      <span class="use-chip" onclick="openModal(1)"><span class="chip-dot" style="background:#378ADD;"></span>Did these votes actually happen?</span>
+      <span class="use-chip" onclick="openModal(2)"><span class="chip-dot" style="background:#639922;"></span>Did this scientist fake the data?</span>
+      <span class="use-chip" onclick="openModal(3)"><span class="chip-dot" style="background:#EF9F27;"></span>Is this earnings report honest?</span>
+      <span class="use-chip" onclick="openModal(4)"><span class="chip-dot" style="background:#7F77DD;"></span>Is this claim real or invented?</span>
+      <span class="use-chip" onclick="openModal(5)"><span class="chip-dot" style="background:#1D9E75;"></span>Was this country's data fabricated?</span>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <div class="modal-hook" id="modal-hook"></div>
+      <div class="modal-domain" id="modal-domain"></div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-nav">
+        <button onclick="stepModal(-1)">← prev</button>
+        <span class="modal-counter" id="modal-counter"></span>
+        <button onclick="stepModal(1)">next →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-section">
+    <label class="input-label" style="margin-top:0;" for="input">Input — comma, space, or newline separated</label>
+    <textarea id="input" placeholder="142, 89, 317, 5043, 21, 678, 1204, 33, 55, 901, 4422, 73, 1890, 256..."></textarea>
+    <div class="controls">
+      <button class="primary" onclick="analyze()">Analyze</button>
+      <button onclick="loadDemo()">Load demo</button>
+      <button onclick="document.getElementById('input').value=''; document.getElementById('results').style.display='none'; document.getElementById('parse-info').textContent=''; document.getElementById('analysis-box').classList.remove('visible');">Clear</button>
+      <span class="parse-info" id="parse-info"></span>
+    </div>
+  </div>
+
+  <button class="guide-toggle" id="guide-btn" onclick="toggleGuide()">
+    <span class="info-icon">i</span>
+    How to read this
+    <span class="arrow">▶</span>
+  </button>
+
+  <div class="guide-panel" id="guide-panel">
+    <h3>What is Benford's Law?</h3>
+    <p>In any large, naturally occurring dataset — invoices, population figures, stock prices, river lengths — the number 1 appears as the first digit about 30% of the time. The number 2 about 17%, and so on down to 9 at just 4.6%. This is not intuitive, but it is remarkably consistent across unrelated domains. Datasets that were <em>fabricated</em> or heavily manipulated tend to break this pattern, which makes it a useful fraud detection signal.</p>
+
+    <h3>What is the MAD score?</h3>
+    <p>MAD stands for Mean Absolute Deviation. It measures the average gap between what your data shows and what Benford's Law predicts, across all nine first digits. A score near zero means your data closely follows the expected pattern. A high score means it diverges — which may or may not indicate a problem depending on the nature of your dataset.</p>
+
+    <h3>What do the colors mean?</h3>
+    <div class="guide-grid">
+      <div class="guide-card" style="background:#EAF3DE;">
+        <strong style="color:#3B6D11;">Green — close (&lt;0.006)</strong>
+        <span style="color:#3B6D11;">The digit conforms tightly. No concern.</span>
+      </div>
+      <div class="guide-card" style="background:#E6F1FB;">
+        <strong style="color:#185FA5;">Blue — acceptable (0.006–0.012)</strong>
+        <span style="color:#185FA5;">Minor deviation within normal variation.</span>
+      </div>
+      <div class="guide-card" style="background:#FAEEDA;">
+        <strong style="color:#854F0B;">Amber — marginal (0.012–0.015)</strong>
+        <span style="color:#854F0B;">Worth noting. May warrant a closer look.</span>
+      </div>
+      <div class="guide-card" style="background:#FCEBEB;">
+        <strong style="color:#A32D2D;">Red — non-conformity (&gt;0.015)</strong>
+        <span style="color:#A32D2D;">Statistically significant deviation. Investigate.</span>
+      </div>
+    </div>
+
+    <h3>What to look for in the chart</h3>
+    <p>Each colored bar is your data. The gray bar behind it is Benford's prediction. If your colored bars are consistently taller or shorter than the gray ones — especially for digit 1 — that is the signal. Digit 1 being under-represented is a classic fabrication pattern: people inventing numbers tend to avoid starting with 1 because it feels too small. Digits 5–7 being over-represented is a rounding pattern: people round to "nice" numbers.</p>
+
+    <h3>Important caveats</h3>
+    <p>Benford's Law works best on datasets with at least 100–300 numbers spanning several orders of magnitude (e.g. mixing hundreds, thousands, millions). It does <em>not</em> apply to constrained ranges (e.g. ages 1–99, percentages, assigned ID numbers) or datasets from a single order of magnitude. Deviation alone is not proof of fraud — it is a signal to investigate further.</p>
+  </div>
+
+  <div class="results" id="results">
+
+    <div class="analysis-box" id="analysis-box">
+      <div class="analysis-title">Analysis summary</div>
+      <div id="analysis-text"></div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-label">Numbers parsed</div>
+        <div class="metric-value" id="m-count">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">MAD score</div>
+        <div class="metric-value mono" id="m-mad">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Overall verdict</div>
+        <div class="metric-value" id="m-verdict" style="font-size:15px; font-weight:500; padding-top:4px;">—</div>
+      </div>
+      <div class="metric" id="m-severity-card">
+        <div class="metric-label">Threshold severity</div>
+        <div style="display:flex; align-items:baseline; gap:4px; margin-bottom:8px;">
+          <div class="metric-value mono" id="m-severity" style="font-size:22px;">—</div>
+          <div style="font-size:13px; color:var(--text-faint); font-family:'IBM Plex Mono',monospace;">/10</div>
+        </div>
+        <div style="position:relative; height:8px; background:var(--border2); border-radius:4px; overflow:hidden;">
+          <div id="m-severity-bar" style="height:100%; width:0%; border-radius:4px; transition:width 0.4s ease;"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-top:4px;">
+          <span style="font-size:12px; color:var(--text-faint); font-family:'IBM Plex Mono',monospace;">0 safe</span>
+          <span style="font-size:12px; color:var(--text-faint); font-family:'IBM Plex Mono',monospace;">10 critical</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Distribution — observed vs. Benford expected</div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:#639922;"></span>close &lt;0.006</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#378ADD;"></span>acceptable 0.006–0.012</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#EF9F27;"></span>marginal 0.012–0.015</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#E24B4A;"></span>non-conformity &gt;0.015</div>
+      <div class="legend-item"><span class="legend-dot" style="background:rgba(128,128,128,0.25); border:0.5px solid #aaa;"></span>Benford expected</div>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="chart" role="img" aria-label="Bar chart comparing observed first-digit frequency against Benford expected frequency, color coded by Nigrini conformity threshold."></canvas>
+    </div>
+
+    <div class="section-label">Per-digit breakdown</div>
+
+    <div class="verdict-table">
+      <div class="verdict-header">
+        <span>d</span>
+        <span>deviation bar</span>
+        <span class="h-observed" style="text-align:right; padding-right:8px;">observed</span>
+        <span class="h-expected" style="text-align:right; padding-right:8px;">expected</span>
+        <span style="text-align:right; padding-right:8px;">Δ MAD</span>
+        <span style="padding-right:8px;">severity</span>
+        <span style="text-align:center;">verdict</span>
+      </div>
+      <div id="verdict-rows"></div>
+    </div>
+
+    <div class="nigrini-scale">
+      <div class="scale-title">Nigrini conformity thresholds</div>
+      <div class="scale-row">
+        <span class="scale-range">&lt; 0.006</span>
+        <span class="scale-bar" style="width:40px; background:#639922;"></span>
+        <span class="scale-desc">close conformity</span>
+      </div>
+      <div class="scale-row">
+        <span class="scale-range">0.006 – 0.012</span>
+        <span class="scale-bar" style="width:64px; background:#378ADD;"></span>
+        <span class="scale-desc">acceptable conformity</span>
+      </div>
+      <div class="scale-row">
+        <span class="scale-range">0.012 – 0.015</span>
+        <span class="scale-bar" style="width:76px; background:#EF9F27;"></span>
+        <span class="scale-desc">marginally acceptable</span>
+      </div>
+      <div class="scale-row">
+        <span class="scale-range">&gt; 0.015</span>
+        <span class="scale-bar" style="width:90px; background:#E24B4A;"></span>
+        <span class="scale-desc">non-conformity — investigate</span>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <span>Benford's Law MAD Analyzer — Nigrini (2012)</span>
+    <span>Paste a list of numbers → first-digit deviation from Benford's distribution using Nigrini MAD thresholds</span>
+    <span>MAD Analyzer · P(d) = log₁₀(1 + 1/d) · MAD = (1/9)Σ|obs − exp|</span>
+  </footer>
+
+</div>
+
+<script>
+const USE_CASES = [
+  {
+    hook: 'Are the books cooked?',
+    domain: 'Forensic accounting & audit',
+    body: 'Fraudsters who invent invoices or inflate expenses have to pick numbers — and humans are terrible at it. They avoid 1s, gravitate toward 5s and 6s. Run Benford on a full transaction ledger and those instincts show up as a statistical fingerprint. Auditors use it to find which drawer is worth opening, not to prove guilt.'
+  },
+  {
+    hook: 'Did these votes actually happen?',
+    domain: 'Election integrity',
+    body: 'Real precinct vote counts follow Benford. Someone fabricating results at a keyboard faces the same problem as the fraudulent accountant — invented numbers don\'t match the distribution of real ones. A Benford anomaly doesn\'t prove manipulation, but it turns a recount request into a credible one.'
+  },
+  {
+    hook: 'Did this scientist actually run the experiment?',
+    domain: 'Research data integrity',
+    body: 'Real measurements are messy. Fabricated or quietly adjusted data tends to be too clean, too uniform, suspiciously round. Benford catches the neatness before any human reviewer does. Journals and institutions increasingly use it to screen submitted datasets.'
+  },
+  {
+    hook: 'Is this earnings report honest?',
+    domain: 'Financial markets',
+    body: 'Companies manage numbers to hit analyst targets — $2.00B looks better than $1.97B. That rounding inflates certain first digits structurally, across quarters. Enron\'s financials showed Benford anomalies years before the collapse.'
+  },
+  {
+    hook: 'Is this claim real or invented?',
+    domain: 'Insurance fraud',
+    body: 'Invented claims cluster around psychologically safe numbers — just under policy limits, just above deductibles. Individually invisible. At portfolio scale, it becomes a pattern. Benford ranks which adjusters or regions warrant a fraud investigator before paying out.'
+  },
+  {
+    hook: 'Was this country\'s data fabricated before the bailout?',
+    domain: 'Macroeconomic reporting',
+    body: 'Governments under pressure to qualify for loans have incentive to make numbers look better than reality. A 2011 study found that countries which later required IMF intervention showed Benford deviations in their prior reported data. The numbers were too clean. The dataset was the tell.'
+  }
+];
+
+let currentModal = 0;
+
+function openModal(index) {
+  currentModal = index;
+  renderModal();
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+function stepModal(dir) {
+  currentModal = (currentModal + dir + USE_CASES.length) % USE_CASES.length;
+  renderModal();
+}
+
+function renderModal() {
+  const c = USE_CASES[currentModal];
+  document.getElementById('modal-hook').textContent = c.hook;
+  document.getElementById('modal-domain').textContent = c.domain;
+  document.getElementById('modal-body').textContent = c.body;
+  document.getElementById('modal-counter').textContent = `${currentModal + 1} / ${USE_CASES.length}`;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if (document.getElementById('modal-overlay').classList.contains('open')) {
+    if (e.key === 'ArrowRight') stepModal(1);
+    if (e.key === 'ArrowLeft') stepModal(-1);
+  }
+});
+const ZONE_BOUNDS = [0, 0.006, 0.012, 0.015];
+
+function zonePenetration(dev) {
+  if (dev < 0.006) return { pct: dev / 0.006, zone: 'close', ceiling: 0.006 };
+  if (dev < 0.012) return { pct: (dev - 0.006) / 0.006, zone: 'acceptable', ceiling: 0.012 };
+  if (dev < 0.015) return { pct: (dev - 0.012) / 0.003, zone: 'marginal', ceiling: 0.015 };
+  return { pct: Math.min((dev - 0.015) / 0.015, 1), zone: 'non-conformity', ceiling: null };
+}
+
+function severityScore(dev) {
+  // Piecewise linear 0–10 mapped to Nigrini zones
+  // [0,0.006]→[0,3]  [0.006,0.012]→[3,6]  [0.012,0.015]→[6,8]  [0.015,0.050]→[8,10]
+  let score;
+  if (dev <= 0) score = 0;
+  else if (dev < 0.006) score = (dev / 0.006) * 3;
+  else if (dev < 0.012) score = 3 + ((dev - 0.006) / 0.006) * 3;
+  else if (dev < 0.015) score = 6 + ((dev - 0.012) / 0.003) * 2;
+  else score = Math.min(8 + ((dev - 0.015) / 0.035) * 2, 10);
+  return Math.round(score * 10) / 10;
+}
+let chartInstance = null;
+
+function toggleGuide() {
+  const btn = document.getElementById('guide-btn');
+  const panel = document.getElementById('guide-panel');
+  btn.classList.toggle('open');
+  panel.classList.toggle('open');
+}
+
+function getThreshold(dev) {
+  if (dev < 0.006) return { label:'close', text:'#3B6D11', bg:'#EAF3DE', bar:'#639922' };
+  if (dev < 0.012) return { label:'acceptable', text:'#185FA5', bg:'#E6F1FB', bar:'#378ADD' };
+  if (dev < 0.015) return { label:'marginal', text:'#854F0B', bg:'#FAEEDA', bar:'#EF9F27' };
+  return { label:'non-conformity', text:'#A32D2D', bg:'#FCEBEB', bar:'#E24B4A' };
+}
+
+function buildAnalysis(tokens, observed, deviations, mad, counts) {
+  const n = tokens.length;
+  const overall = getThreshold(mad);
+  const lines = [];
+
+  // Detect uniform distribution: all observed frequencies within ±4pp of 1/9 ≈ 11.1%
+  const uniformTarget = 1/9;
+  const isUniform = observed.every(o => Math.abs(o - uniformTarget) < 0.04);
+  // Detect constrained range: spread across < 2 orders of magnitude
+  const nums = tokens.map(t => Math.abs(t)).filter(t => t >= 1);
+  const logSpread = nums.length > 1 ? Math.log10(Math.max(...nums)) - Math.log10(Math.min(...nums)) : 0;
+  const isConstrained = logSpread < 1.5;
+
+  const verdictClass = mad < 0.006 ? 'ok' : mad < 0.012 ? 'highlight' : mad < 0.015 ? 'caution' : 'warn';
+  lines.push(`<p>Dataset of <span class="highlight">${n.toLocaleString()} numbers</span> — overall MAD of <span class="${verdictClass}">${mad.toFixed(5)}</span>, classified as <span class="${verdictClass}">${overall.label}</span> conformity with Benford's Law.</p>`);
+
+  if (isUniform && mad >= 0.015) {
+    lines.push(`<p><span class="warn">Uniform distribution detected.</span> All nine first digits appear at roughly equal frequency (~11% each). This is the expected signature of a random number generator or a dataset drawn uniformly from a fixed range — not naturally occurring data. Benford's Law does not apply to uniform distributions. High severity here is mathematically correct, not an anomaly flag.</p>`);
+  } else if (isConstrained && mad >= 0.012) {
+    lines.push(`<p><span class="caution">Constrained range detected.</span> Your numbers span less than 1.5 orders of magnitude (roughly a 30× spread). Benford's Law requires data spanning multiple orders of magnitude to produce reliable results. Deviation at this range is expected and does not indicate manipulation.</p>`);
+  }
+
+  if (n < 100) {
+    lines.push(`<p><span class="caution">Sample size caveat:</span> With fewer than 100 numbers, Benford's Law has limited statistical power. Results are indicative only — a dataset this small can show high deviation purely by chance.</p>`);
+  }
+
+  if (!isUniform) {
+    const redDigits = [1,2,3,4,5,6,7,8,9].filter((_,i) => deviations[i] >= 0.015);
+    const amberDigits = [1,2,3,4,5,6,7,8,9].filter((_,i) => deviations[i] >= 0.012 && deviations[i] < 0.015);
+
+    if (redDigits.length === 0 && amberDigits.length === 0) {
+      lines.push(`<p>All nine first digits fall within acceptable deviation ranges. No individual digit raises a conformity concern.</p>`);
+    } else {
+      if (redDigits.length > 0) {
+        const details = redDigits.map(d => {
+          const i = d - 1;
+          const dir = observed[i] > BENFORD[i] ? 'over-represented' : 'under-represented';
+          const delta = ((observed[i] - BENFORD[i]) * 100).toFixed(1);
+          const sign = observed[i] > BENFORD[i] ? '+' : '';
+          return `digit <strong>${d}</strong> (${sign}${delta}pp, ${dir})`;
+        });
+        lines.push(`<p><span class="warn">Non-conformity flagged</span> on ${details.join('; ')}.</p>`);
+      }
+      if (amberDigits.length > 0) {
+        const details = amberDigits.map(d => {
+          const i = d - 1;
+          const dir = observed[i] > BENFORD[i] ? 'over' : 'under';
+          return `digit <strong>${d}</strong> (${dir}-represented)`;
+        });
+        lines.push(`<p><span class="caution">Marginal deviation</span> on ${details.join(', ')} — within watch-list range but not conclusive.</p>`);
+      }
+    }
+
+    const d1obs = (observed[0] * 100).toFixed(1);
+    const d1exp = (BENFORD[0] * 100).toFixed(1);
+    if (deviations[0] >= 0.015) {
+      const dir = observed[0] > BENFORD[0] ? 'higher' : 'lower';
+      const interpretation = observed[0] < BENFORD[0]
+        ? 'Under-representation of digit 1 is a known fabrication pattern — people inventing numbers tend to avoid leading with 1.'
+        : 'Over-representation of digit 1 can occur in constrained datasets (e.g. values bounded below a threshold) or certain accounting contexts.';
+      lines.push(`<p>Digit 1 observed at ${d1obs}% vs. expected ${d1exp}% — ${dir} than predicted. ${interpretation}</p>`);
+    }
+
+    const highDigits = [5,6,7].filter(d => deviations[d-1] >= 0.012 && observed[d-1] > BENFORD[d-1]);
+    if (highDigits.length >= 2) {
+      lines.push(`<p>Digits ${highDigits.join(', ')} are simultaneously over-represented — a pattern consistent with rounding or estimation to round numbers (50s, 60s, 70s ranges).</p>`);
+    }
+  }
+
+  if (!isUniform && !isConstrained) {
+    if (mad < 0.006) {
+      lines.push(`<p>At this conformity level, the dataset shows no statistical basis for concern. It behaves as expected from naturally occurring numerical data.</p>`);
+    } else if (mad >= 0.015) {
+      lines.push(`<p>A MAD above 0.015 warrants further investigation — verify the data source, collection method, and whether the population structure could explain the deviation before drawing conclusions about manipulation.</p>`);
+    }
+  }
+
+  return lines.join('');
+}
+
+const isDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+function getChartColors() {
+  return {
+    grid: isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+    ticks: isDark() ? '#666660' : '#9b9b93',
+    benfordBg: isDark() ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+    benfordBorder: isDark() ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)',
+  };
+}
+
+function loadDemo() {
+  const nums = Array.from({length: 300}, () => Math.floor(Math.pow(10, Math.random() * 4.5)));
+  document.getElementById('input').value = nums.join(', ');
+  analyze();
+}
+
+function analyze() {
+  const raw = document.getElementById('input').value;
+  const tokens = raw.split(/[\s,;\n\t]+/).map(s => s.trim()).filter(s => /^-?\d+(\.\d+)?$/.test(s)).map(Number).filter(n => Math.abs(n) >= 1);
+
+  document.getElementById('parse-info').textContent = tokens.length ? `${tokens.length} valid numbers` : 'no valid numbers found';
+  if (!tokens.length) { document.getElementById('results').style.display = 'none'; return; }
+
+  const counts = new Array(9).fill(0);
+  tokens.forEach(n => {
+    const s = String(Math.abs(Math.round(n))).replace(/^0+/, '');
+    const d = parseInt(s[0]);
+    if (d >= 1 && d <= 9) counts[d-1]++;
+  });
+
+  const total = counts.reduce((a,b) => a+b, 0);
+  const observed = counts.map(c => c / total);
+  const deviations = observed.map((o,i) => Math.abs(o - BENFORD[i]));
+  const mad = deviations.reduce((a,b) => a+b, 0) / 9;
+  const overall = getThreshold(mad);
+
+  document.getElementById('m-count').textContent = tokens.length.toLocaleString();
+  document.getElementById('m-mad').textContent = mad.toFixed(5);
+
+  const v = document.getElementById('m-verdict');
+  v.textContent = overall.label;
+  v.style.color = overall.bar;
+
+  const overallScore = severityScore(mad);
+  const overallColor = getThreshold(mad).bar;
+  const mSev = document.getElementById('m-severity');
+  mSev.textContent = overallScore.toFixed(1);
+  mSev.style.color = overallColor;
+  const sevBar = document.getElementById('m-severity-bar');
+  sevBar.style.width = (overallScore * 10) + '%';
+  sevBar.style.background = overallColor;
+
+  document.getElementById('results').style.display = 'block';
+
+  const analysisBox = document.getElementById('analysis-box');
+  document.getElementById('analysis-text').innerHTML = buildAnalysis(tokens, observed, deviations, mad, counts);
+  analysisBox.style.borderLeftColor = overall.bar;
+  analysisBox.classList.add('visible');
+
+  const cc = getChartColors();
+  const barColors = deviations.map(d => getThreshold(d).bar);
+
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(document.getElementById('chart'), {
+    type: 'bar',
+    data: {
+      labels: ['1','2','3','4','5','6','7','8','9'],
+      datasets: [
+        {
+          label: 'Observed',
+          data: observed.map(v => parseFloat((v*100).toFixed(3))),
+          backgroundColor: barColors,
+          borderColor: barColors,
+          borderWidth: 0,
+          borderRadius: 3,
+          order: 1
+        },
+        {
+          label: 'Benford',
+          data: BENFORD.map(v => parseFloat((v*100).toFixed(3))),
+          backgroundColor: cc.benfordBg,
+          borderColor: cc.benfordBorder,
+          borderWidth: 1,
+          borderRadius: 3,
+          order: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 12, family: 'IBM Plex Mono' }, color: cc.ticks },
+          title: { display: true, text: 'First digit', font: { size: 13, family: 'IBM Plex Sans' }, color: cc.ticks }
+        },
+        y: {
+          grid: { color: cc.grid },
+          ticks: { callback: v => v + '%', font: { size: 12, family: 'IBM Plex Mono' }, color: cc.ticks },
+          title: { display: true, text: 'Frequency (%)', font: { size: 13, family: 'IBM Plex Sans' }, color: cc.ticks }
+        }
+      }
+    }
+  });
+
+  const maxDev = Math.max(...deviations);
+  const rows = document.getElementById('verdict-rows');
+  rows.innerHTML = [1,2,3,4,5,6,7,8,9].map((d, i) => {
+    const t = getThreshold(deviations[i]);
+    const score = severityScore(deviations[i]);
+    const zp = zonePenetration(deviations[i]);
+    const obs = (observed[i]*100).toFixed(2);
+    const exp = (BENFORD[i]*100).toFixed(2);
+    const dev = deviations[i].toFixed(5);
+    const barW = maxDev > 0 ? Math.round((deviations[i]/maxDev)*100) : 0;
+    return `<div class="verdict-row">
+      <span class="digit-cell">${d}</span>
+      <div class="bar-cell">
+        <div class="mini-bar-track">
+          <div class="mini-bar-fill" style="width:${barW}%; background:${t.bar};"></div>
+        </div>
+      </div>
+      <span class="num-cell observed">${obs}%</span>
+      <span class="num-cell expected">${exp}%</span>
+      <span class="num-cell">${dev}</span>
+      <div class="severity-cell">
+        <span class="severity-mult" style="color:${t.bar};">${score.toFixed(1)}<span style="font-size:11px; color:var(--text-faint);">/10</span></span>
+        <div class="zone-track"><div class="zone-fill" style="width:${score*10}%; background:${t.bar};"></div></div>
+      </div>
+      <span style="text-align:center;"><span class="badge" style="background:${t.bg}; color:${t.text};">${t.label}</span></span>
+    </div>`;
+  }).join('');
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') analyze();
+});
+</script>
+</body>
+</html>
